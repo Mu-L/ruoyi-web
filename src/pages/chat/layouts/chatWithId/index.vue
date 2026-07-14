@@ -4,18 +4,20 @@ import type { AnyObject } from 'typescript-api-pro';
 import type { BubbleProps } from 'vue-element-plus-x/types/Bubble';
 import type { BubbleListInstance } from 'vue-element-plus-x/types/BubbleList';
 import type { ThinkingStatus } from 'vue-element-plus-x/types/Thinking';
-import type { ToolCallInfo } from './types';
+import type { ToolCallInfo, WfNodeEvent } from './types';
+import type { SendDTO, WfNodeInput, WfNodeInputDef } from '@/api/chat/types';
 import { useHookFetch } from 'hook-fetch/vue';
 import { nextTick } from 'vue';
 import { useRoute } from 'vue-router';
 import { send } from '@/api';
 import ChatSender from '@/components/ChatSender/index.vue';
+import { useAgentStore } from '@/stores/modules/agent';
 import { useChatStore } from '@/stores/modules/chat';
 import { useModelStore } from '@/stores/modules/model';
-import { useSessionStore } from '@/stores/modules/session';
 import { useUserStore } from '@/stores/modules/user';
 import { codeXRender } from '@/utils/markdownRenderers';
 import ToolCallCard from './components/ToolCallCard.vue';
+import WfNodeCard from './components/WfNodeCard.vue';
 
 type MessageItem = BubbleProps & {
   key: number;
@@ -25,12 +27,18 @@ type MessageItem = BubbleProps & {
   thinlCollapse?: boolean;
   reasoning_content?: string;
   class?: string;
+  /** 工作流人机交互：渲染为输入框气泡 */
+  isWorkflowFeedback?: boolean;
+  /** 人机交互提示词 */
+  feedbackTip?: string;
+  /** 人机交互输入框临时内容 */
+  feedbackValue?: string;
 };
 
 const route = useRoute();
 const chatStore = useChatStore();
 const modelStore = useModelStore();
-const sessionStore = useSessionStore();
+const agentStore = useAgentStore();
 const userStore = useUserStore();
 
 // 用户头像
@@ -48,6 +56,22 @@ const bubbleListRef = ref<BubbleListInstance | null>(null);
 const toolCallEvents = ref<ToolCallInfo[]>([]);
 // 工具调用事件计数器（用于生成唯一 key）
 let toolCallKeyCounter = 0;
+
+// 工作流节点事件列表（节点输入/输出/运行卡片）
+const wfNodeEvents = ref<WfNodeEvent[]>([]);
+let wfNodeKeyCounter = 0;
+// 节点 uuid -> 标题 映射（从工作流详情取，用于卡片展示）
+const wfNodeUuidToTitle = computed<Record<string, string>>(() =>
+  chatStore.currentWorkflow?.nodeTitles ? { ...chatStore.currentWorkflow.nodeTitles } : {},
+);
+// 当前工作流运行时 uuid（从 [START] 事件解析，用于人机交互恢复）
+let wfRuntimeUuid = '';
+// 节点 uuid -> runtimeNode uuid 映射（[NODE_RUN] 时建立，供 [NODE_INPUT/OUTPUT] 关联）
+const wfNodeUuidToRuntimeUuid = ref<Record<string, string>>({});
+
+// 当前是否选中工作流（全局，与智能体互斥）
+const currentBinding = computed(() => chatStore.currentWorkflow);
+const hasWfNodeEvents = computed(() => wfNodeEvents.value.length > 0);
 
 // 是否有工具调用事件
 const hasToolCallEvents = computed(() => toolCallEvents.value.length > 0);
@@ -67,16 +91,11 @@ const {
   },
 });
 
-// 从 localStorage 恢复推理状态
+// 组件挂载初始化
 onMounted(() => {
   bubbleItems.value.forEach((item) => {
     copyIconMap.value[item.key] = 'CopyDocument';
   });
-  const enableThinking = localStorage.getItem('enableThinking');
-  if (enableThinking === 'true' && chatSenderRef.value) {
-    chatSenderRef.value.isReasoningEnabled = true;
-    localStorage.removeItem('enableThinking');
-  }
 });
 
 // 记录进入思考中
@@ -86,9 +105,13 @@ watch(
   () => route.params?.id,
   async (_id_) => {
     if (_id_) {
-      // 切换会话时清空工具调用事件
+      // 切换会话时清空工具调用事件与工作流节点事件
       toolCallEvents.value = [];
       toolCallKeyCounter = 0;
+      wfNodeEvents.value = [];
+      wfNodeKeyCounter = 0;
+      wfNodeUuidToRuntimeUuid.value = {};
+      wfRuntimeUuid = '';
 
       if (_id_ !== 'not_login') {
         // 判断的当前会话id是否有聊天记录，有缓存则直接赋值展示
@@ -133,10 +156,22 @@ function handleError(err: any) {
 }
 
 async function startSSE(chatContent: string) {
+  if (!userStore.token) {
+    userStore.ensureLogin('/chat', '登录后即可继续当前对话');
+    return;
+  }
+
   try {
     // 清空上一次的工具调用事件
     toolCallEvents.value = [];
     toolCallKeyCounter = 0;
+    // 绑定了工作流时，清空上一次的节点事件
+    if (currentBinding.value) {
+      wfNodeEvents.value = [];
+      wfNodeKeyCounter = 0;
+      wfNodeUuidToRuntimeUuid.value = {};
+      wfRuntimeUuid = '';
+    }
 
     // 添加用户输入的消息
     inputValue.value = '';
@@ -152,13 +187,24 @@ async function startSSE(chatContent: string) {
     // 标记是否收到第一个有效数据 chunk（用于清除 loading 状态）
     let hasReceivedFirstContent = false;
 
-    for await (const chunk of stream({
+    // 构造发送请求体
+    const payload: SendDTO = {
       model: modelStore.currentModelInfo.modelName ?? '',
+      agentId: agentStore.currentAgentInfo?.id || undefined,
       content: lastUserMessage?.content ?? '',
       sessionId: route.params?.id !== 'not_login' ? String(route.params?.id) : undefined,
-      enableThinking: chatSenderRef.value?.isReasoningEnabled || false,
-      knowledgeId: chatStore.knowledgeId || undefined,
-    })) {
+    };
+
+    // 绑定了工作流：走工作流模式（后端 enableWorkFlow 优先级最高，会短路 agent/thinking）
+    if (currentBinding.value) {
+      payload.enableWorkFlow = true;
+      payload.workFlowRunner = {
+        uuid: currentBinding.value.uuid,
+        inputs: buildWorkflowInputs(currentBinding.value, chatContent),
+      };
+    }
+
+    for await (const chunk of stream(payload)) {
       // 处理数据块 - chunk.result 可能是字符串或对象
       // 返回 true 表示流结束
       const isStreamEnd = handleDataChunk(chunk.result as AnyObject | string);
@@ -207,6 +253,104 @@ async function startSSE(chatContent: string) {
   }
 }
 
+/**
+ * 根据工作流绑定的 start 节点输入定义构造运行输入。
+ * 约定：把本轮聊天内容填进第一个文本输入(type===1)；其它输入沿用绑定里预填的值。
+ */
+function buildWorkflowInputs(
+  binding: { startInputs: WfNodeInputDef[]; inputs: WfNodeInput[] },
+  chatContent: string,
+): WfNodeInput[] {
+  const base
+    = binding.inputs && binding.inputs.length
+      ? binding.inputs.map(i => ({ ...i, content: { ...i.content } }))
+      : defaultInputsFromDefs(binding.startInputs);
+  const textInput = base.find(i => i.content.type === 1);
+  if (textInput) {
+    textInput.content.value = chatContent;
+  }
+  return base;
+}
+
+function defaultInputsFromDefs(defs: WfNodeInputDef[]): WfNodeInput[] {
+  return (defs || []).map(d => ({
+    uuid: d.uuid,
+    name: d.name,
+    content: { title: d.title, value: null, type: d.type },
+    required: d.required,
+  }));
+}
+
+/**
+ * 人机交互恢复：把用户输入作为 feedbackContent 发回 /chat/send，继续工作流。
+ */
+async function startResumeSSE(feedbackContent: string) {
+  if (!feedbackContent.trim() || !wfRuntimeUuid) {
+    return;
+  }
+  try {
+    addMessage(feedbackContent, true);
+    addMessage('', false);
+    bubbleListRef.value?.scrollToBottom();
+
+    const payload: SendDTO = {
+      model: modelStore.currentModelInfo.modelName ?? '',
+      agentId: agentStore.currentAgentInfo?.id || undefined,
+      content: feedbackContent,
+      sessionId: route.params?.id !== 'not_login' ? String(route.params?.id) : undefined,
+      isResume: true,
+      reSumeRunner: {
+        runtimeUuid: wfRuntimeUuid,
+        feedbackContent,
+      },
+    };
+
+    let hasReceivedFirstContent = false;
+    for await (const chunk of stream(payload)) {
+      const isStreamEnd = handleDataChunk(chunk.result as AnyObject | string);
+      if (!hasReceivedFirstContent && chunk.result !== ':connected' && chunk.result !== ':disconnected' && !isStreamEnd) {
+        const lastMessage = bubbleItems.value[bubbleItems.value.length - 1];
+        if (lastMessage) {
+          lastMessage.loading = false;
+          bubbleItems.value = [...bubbleItems.value];
+        }
+        hasReceivedFirstContent = true;
+      }
+      if (isStreamEnd) {
+        break;
+      }
+      await nextTick();
+    }
+  }
+  catch (err) {
+    handleError(err);
+  }
+  finally {
+    if (bubbleItems.value.length) {
+      const lastMessage = bubbleItems.value[bubbleItems.value.length - 1];
+      lastMessage.typing = false;
+      lastMessage.loading = false;
+      if (lastMessage.thinkingStatus === 'thinking') {
+        lastMessage.thinkingStatus = 'end';
+      }
+      isThinking = false;
+      bubbleItems.value = [...bubbleItems.value];
+    }
+  }
+}
+
+/**
+ * 提交某条反馈气泡的输入。
+ */
+function submitFeedback(item: MessageItem) {
+  const value = item.feedbackValue || '';
+  // 把该反馈气泡标记为已提交（转为普通 system 文案），避免重复提交
+  item.isWorkflowFeedback = false;
+  item.content = `已回复：${value}`;
+  bubbleItems.value = [...bubbleItems.value];
+  startResumeSSE(value);
+}
+
 // 封装数据处理逻辑
 function handleDataChunk(chunk: AnyObject | string): boolean {
   console.log('[SSE] 收到 chunk:', chunk, 'type:', typeof chunk);
@@ -214,6 +358,7 @@ function handleDataChunk(chunk: AnyObject | string): boolean {
   try {
     let dataObj: AnyObject | null = null;
     let eventType = '';
+    let rawDataStr = '';
 
     if (typeof chunk === 'string') {
       if (chunk === ':connected' || chunk === ':disconnected') {
@@ -227,14 +372,19 @@ function handleDataChunk(chunk: AnyObject | string): boolean {
           eventType = line.substring(6).trim();
         }
         else if (line.startsWith('data:')) {
-          const jsonStr = line.substring(5).trim();
+          rawDataStr = line.substring(5).trim();
           try {
-            dataObj = JSON.parse(jsonStr);
+            dataObj = JSON.parse(rawDataStr);
           }
           catch {
-            console.warn('[SSE] JSON 解析失败:', jsonStr);
+            console.warn('[SSE] JSON 解析失败:', rawDataStr);
           }
         }
+      }
+
+      // 工作流事件优先处理（事件名带方括号，如 [NODE_CHUNK_*] / [START] / [DONE]）
+      if (eventType.startsWith('[')) {
+        return handleWorkflowEvent(eventType, rawDataStr, dataObj);
       }
 
       if (eventType === 'done' || dataObj?.done === true) {
@@ -293,6 +443,151 @@ function handleDataChunk(chunk: AnyObject | string): boolean {
     console.error('解析数据时出错:', err);
   }
 
+  return false;
+}
+
+/**
+ * 工作流 SSE 事件分发。事件名带方括号，来自后端 WorkflowEngine / AdiConstant.SSEEventName：
+ * [START] / [DONE] / [ERROR] / [NODE_RUN_<uuid>] / [NODE_INPUT_<uuid>]
+ * / [NODE_OUTPUT_<uuid>] / [NODE_CHUNK_<uuid>] / [NODE_WAIT_FEEDBACK_BY_<uuid>]
+ * 返回 true 表示流结束。
+ */
+function handleWorkflowEvent(
+  eventName: string,
+  rawData: string,
+  dataObj: AnyObject | null,
+): boolean {
+  // [START] 携带 wfRuntimeResp JSON，其中 uuid 即 runtimeUuid
+  if (eventName === '[START]') {
+    if (dataObj?.uuid) {
+      wfRuntimeUuid = dataObj.uuid as string;
+    }
+    return false;
+  }
+
+  // [DONE] 流结束
+  if (eventName === '[DONE]') {
+    console.log('[SSE] 工作流流结束');
+    return true;
+  }
+
+  // [ERROR]
+  if (eventName === '[ERROR]') {
+    const errMsg = (dataObj?.msg as string) || rawData || '工作流执行失败';
+    const lastMessage = bubbleItems.value[bubbleItems.value.length - 1];
+    if (lastMessage) {
+      lastMessage.loading = false;
+      lastMessage.content += `\n\n> ❌ ${errMsg}`;
+      bubbleItems.value = [...bubbleItems.value];
+    }
+    ElMessage.error(errMsg);
+    return true;
+  }
+
+  // [NODE_RUN_<uuid>] 节点开始：记录 runtimeNode uuid 映射
+  if (eventName.startsWith('[NODE_RUN_')) {
+    const nodeUuid = eventName.replace('[NODE_RUN_', '').replace(']', '');
+    try {
+      const runtimeNode = dataObj ? JSON.parse(rawData) : null;
+      if (runtimeNode?.uuid) {
+        wfNodeUuidToRuntimeUuid.value[nodeUuid] = runtimeNode.uuid;
+      }
+      wfNodeEvents.value = [
+        ...wfNodeEvents.value,
+        {
+          key: ++wfNodeKeyCounter,
+          nodeUuid,
+          nodeTitle: wfNodeUuidToTitle.value[nodeUuid],
+          type: 'run',
+          data: runtimeNode || rawData,
+          timestamp: Date.now(),
+        },
+      ];
+    }
+    catch (e) {
+      console.warn('[SSE] NODE_RUN 解析失败', e);
+    }
+    return false;
+  }
+
+  // [NODE_CHUNK_<uuid>] LLM 流式文本块：追加到当前 assistant 气泡
+  if (eventName.startsWith('[NODE_CHUNK_')) {
+    if (rawData) {
+      // 去掉后端可能加的多行分隔标记
+      const text = rawData.replace(/-_wrap_-/g, '\n');
+      handleContentChunk(text);
+    }
+    return false;
+  }
+
+  // [NODE_INPUT_<uuid>] 节点输入
+  if (eventName.startsWith('[NODE_INPUT_')) {
+    const nodeUuid = eventName.replace('[NODE_INPUT_', '').replace(']', '');
+    wfNodeEvents.value = [
+      ...wfNodeEvents.value,
+      {
+        key: ++wfNodeKeyCounter,
+        nodeUuid,
+        nodeTitle: wfNodeUuidToTitle.value[nodeUuid],
+        type: 'input',
+        data: dataObj || rawData,
+        timestamp: Date.now(),
+      },
+    ];
+    bubbleListRef.value?.scrollToBottom();
+    return false;
+  }
+
+  // [NODE_OUTPUT_<uuid>] 节点输出
+  if (eventName.startsWith('[NODE_OUTPUT_')) {
+    const nodeUuid = eventName.replace('[NODE_OUTPUT_', '').replace(']', '');
+    wfNodeEvents.value = [
+      ...wfNodeEvents.value,
+      {
+        key: ++wfNodeKeyCounter,
+        nodeUuid,
+        nodeTitle: wfNodeUuidToTitle.value[nodeUuid],
+        type: 'output',
+        data: dataObj || rawData,
+        timestamp: Date.now(),
+      },
+    ];
+    bubbleListRef.value?.scrollToBottom();
+    return false;
+  }
+
+  // [NODE_WAIT_FEEDBACK_BY_<uuid>] 人机交互等待输入
+  if (eventName.startsWith('[NODE_WAIT_FEEDBACK_BY_')) {
+    const tip = rawData || '流程已暂停，请输入内容后继续';
+    // 先把当前 assistant 气泡的 loading 关掉
+    const lastMessage = bubbleItems.value[bubbleItems.value.length - 1];
+    if (lastMessage) {
+      lastMessage.loading = false;
+      lastMessage.typing = false;
+    }
+    // 追加一条反馈输入气泡
+    bubbleItems.value = [
+      ...bubbleItems.value,
+      {
+        key: bubbleItems.value.length,
+        avatar: 'https://cube.elemecdn.com/0/88/03b0d39583f48206768a7534e55bcpng.png',
+        avatarSize: '32px',
+        role: 'system',
+        placement: 'start',
+        isMarkdown: false,
+        loading: false,
+        content: '',
+        isWorkflowFeedback: true,
+        feedbackTip: tip,
+        feedbackValue: '',
+        noStyle: true,
+      } as MessageItem,
+    ];
+    bubbleListRef.value?.scrollToBottom();
+    return false;
+  }
+
+  // 其它未知带方括号事件忽略
   return false;
 }
 
@@ -469,10 +764,6 @@ function sendMessageByKey(key: number) {
     cancelEditingByKey(key);
   }
 }
-
-function handleCreateNewChat() {
-  sessionStore.createSessionBtn();
-}
 </script>
 
 <template>
@@ -485,6 +776,17 @@ function handleCreateNewChat() {
             v-for="tool in toolCallEvents"
             :key="tool.key"
             :tool-info="tool"
+          />
+        </div>
+      </Transition>
+
+      <!-- 工作流节点事件区域 -->
+      <Transition name="tool-events-fade">
+        <div v-if="hasWfNodeEvents" class="tool-events-wrapper">
+          <WfNodeCard
+            v-for="evt in wfNodeEvents"
+            :key="evt.key"
+            :event="evt"
           />
         </div>
       </Transition>
@@ -502,8 +804,28 @@ function handleCreateNewChat() {
         </template>
 
         <template #content="{ item }">
+          <!-- 工作流人机交互：输入框气泡 -->
+          <div v-if="item.isWorkflowFeedback" class="wf-feedback-bubble">
+            <div class="wf-feedback-tip">
+              <el-icon style="color: #E6A23C; margin-right: 4px; vertical-align: -2px;">
+                <WarningFilled />
+              </el-icon>
+              {{ item.feedbackTip || '流程已暂停，请输入内容后继续' }}
+            </div>
+            <el-input
+              v-model="item.feedbackValue"
+              type="textarea"
+              :autosize="{ minRows: 2, maxRows: 5 }"
+              placeholder="输入内容后提交，继续执行流程"
+            />
+            <div class="wf-feedback-actions">
+              <el-button type="primary" size="small" @click="submitFeedback(item)">
+                提交并继续
+              </el-button>
+            </div>
+          </div>
           <XMarkdown
-            v-if="item.content && item.role === 'system'"
+            v-else-if="item.content && item.role === 'system'"
             :markdown="item.content"
             :code-x-render="codeXRender"
             class="markdown-body"
@@ -556,14 +878,6 @@ function handleCreateNewChat() {
       </BubbleList>
 
       <div class="sender-wrapper">
-        <!-- 新对话按钮 -->
-        <div class="new-chat-btn" @click="handleCreateNewChat">
-          <el-icon class="btn-icon">
-            <Plus />
-          </el-icon>
-          <span class="btn-text">新对话</span>
-        </div>
-
         <ChatSender
           ref="chatSenderRef"
           v-model="inputValue"
@@ -690,47 +1004,6 @@ function handleCreateNewChat() {
       position: relative;
       width: 100%;
       margin-bottom: 22px;
-
-      .new-chat-btn {
-        position: absolute;
-        top: -40px;
-        left: 0;
-        z-index: 10;
-        display: inline-flex;
-        gap: 6px;
-        align-items: center;
-        padding: 6px 12px;
-        cursor: pointer;
-        user-select: none;
-        background-color: #ffffff;
-        border: 1px solid rgb(0 0 0 / 10%);
-        border-radius: 16px;
-        box-shadow: 0 1px 2px rgb(0 0 0 / 5%);
-        transition: all 0.2s ease;
-
-        &:hover {
-          background-color: rgb(0 87 255 / 4%);
-          border-color: rgb(0 87 255 / 20%);
-          box-shadow: 0 2px 4px rgb(0 87 255 / 10%);
-          .btn-icon {
-            color: #0057ff;
-          }
-        }
-
-        .btn-icon {
-          width: 16px;
-          height: 16px;
-          font-size: 16px;
-          color: rgb(0 0 0 / 65%);
-          transition: color 0.2s ease;
-        }
-
-        .btn-text {
-          font-size: 13px;
-          font-weight: 500;
-          color: rgb(0 0 0 / 85%);
-        }
-      }
     }
   }
 
@@ -763,6 +1036,28 @@ function handleCreateNewChat() {
       width: 100%;
       overflow: visible;
     }
+  }
+}
+
+.wf-feedback-bubble {
+  width: 100%;
+  max-width: 520px;
+  padding: 12px;
+  border: 1px solid #f0c78a;
+  background: #fdf6ec;
+  border-radius: 12px;
+
+  .wf-feedback-tip {
+    font-size: 13px;
+    color: #b88230;
+    margin-bottom: 8px;
+    line-height: 1.6;
+  }
+
+  .wf-feedback-actions {
+    margin-top: 8px;
+    display: flex;
+    justify-content: flex-end;
   }
 }
 </style>

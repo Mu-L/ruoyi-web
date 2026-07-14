@@ -47,8 +47,11 @@ function jwtPlugin(): HookFetchPlugin<BaseResponse> {
       // 处理401逻辑
       if (response.result?.code === 401) {
         // 如果没有权限，退出，且弹框提示登录
-        userStore.logout();
-        userStore.openLoginDialog();
+        userStore.handleAuthExpired(
+          router.currentRoute.value.fullPath,
+          '登录状态已失效，请重新登录',
+        );
+        return Promise.reject(response);
       }
       ElMessage.error(response.result?.msg);
       return Promise.reject(response);

@@ -1,16 +1,42 @@
 /**
  * 工作流请求体
+ *
+ * 与后端 org.ruoyi.common.chat.domain.dto.request.WorkFlowRunner 对齐：
+ *   { uuid, inputs }
+ *   - uuid: 工作流唯一标识（不是 workflowId）
+ *   - inputs: List<ObjectNode>，每项形如 { uuid?, name, content: { title?, value, type } }
+ *     name / content.type 来自 start 节点 inputConfig.user_inputs 的定义。
  */
 export interface WorkFlowRunner {
-  workflowId?: string;
-  inputs?: {
-    name: string;
-    type: string;
-    content: {
-      value: string;
-      type: string;
-    };
-  }[];
+  uuid?: string;
+  inputs?: WfNodeInput[];
+}
+
+/**
+ * 工作流 start 节点输入参数定义（来自 GET /workflow/{uuid} 返回的 start 节点
+ * inputConfig.user_inputs）。type: 1=文本 2=数字 3=? 4=文件 5=布尔。
+ */
+export interface WfNodeInputDef {
+  uuid?: string;
+  name: string;
+  title?: string;
+  type: number;
+  required?: boolean;
+  limit?: number;
+}
+
+/**
+ * 工作流运行时实际发送的输入项。content.type 与 WfNodeInputDef.type 对应。
+ */
+export interface WfNodeInput {
+  uuid?: string;
+  name: string;
+  content: {
+    title?: string;
+    value: any;
+    type: number;
+  };
+  required?: boolean;
 }
 
 /**
@@ -60,6 +86,10 @@ export interface SendDTO {
    * 传入的模型（必填）
    */
   model: string;
+  /**
+   * 智能体ID（传入时后端按智能体配置解析模型/工具/技能/知识库/提示词/是否深度思考）
+   */
+  agentId?: number;
   /**
    * 对话消息（必填）
    */
@@ -280,4 +310,53 @@ export interface workflowVo {
   currentPage?: number;
 
   pageSize?: number;
+}
+
+/**
+ * 工作流列表/详情响应（对应后端 WorkflowResp）。
+ * /admin/workflow/search 返回 R<Page<WorkflowResp>>，列表项也是这个结构（nodes/edges 可能为空）。
+ */
+export interface WorkflowResp {
+  id?: number;
+  uuid: string;
+  title: string;
+  remark?: string;
+  isPublic?: boolean;
+  userId?: number;
+  userUuid?: string;
+  userName?: string;
+  nodes?: WorkflowNodeDto[];
+  edges?: WorkflowEdgeDto[];
+  createTime?: string;
+  updateTime?: string;
+}
+
+export interface WorkflowNodeDto {
+  uuid: string;
+  title?: string;
+  workflowUuid?: string;
+  workflowComponentId?: number | string;
+  wfComponent?: { name?: string; title?: string };
+  inputConfig?: any;
+  nodeConfig?: any;
+  outputConfig?: any;
+  positionX?: number;
+  positionY?: number;
+}
+
+export interface WorkflowEdgeDto {
+  uuid: string;
+  workflowUuid?: string;
+  sourceNodeUuid: string;
+  sourceHandle?: string;
+  targetNodeUuid: string;
+}
+
+/**
+ * 分页响应通用结构（R<Page<T>>）。
+ */
+export interface PageResult<T> {
+  total?: number;
+  rows?: T[];
+  [key: string]: any;
 }

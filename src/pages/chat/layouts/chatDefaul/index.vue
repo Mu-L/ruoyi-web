@@ -14,7 +14,6 @@ const senderRef = ref<InstanceType<typeof ChatSender> | null>(null);
 
 async function handleSubmit(content: string) {
   localStorage.setItem('chatContent', content);
-  localStorage.setItem('enableThinking', String(senderRef.value?.isReasoningEnabled || false));
 
   senderValue.value = '';
   await sessionStore.createSessionList({

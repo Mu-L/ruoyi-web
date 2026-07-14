@@ -1,7 +1,23 @@
-import type { ChatMessageVo } from '@/api/chat/types';
+import type { ChatMessageVo, WfNodeInput, WfNodeInputDef } from '@/api/chat/types';
 import { defineStore } from 'pinia';
 import { getChatList } from '@/api';
 import { useUserStore } from './user';
+
+/**
+ * 工作流与会话的绑定关系。按 sessionId 存，持久化到 localStorage。
+ * - uuid: 工作流 uuid
+ * - title: 工作流标题（顶栏展示用）
+ * - startInputs: start 节点输入参数定义（来自 GET /workflow/{uuid}）
+ * - inputs: 预填好的输入项（复杂输入表单提交后保存；单文本输入留空，每轮用聊天内容填充）
+ */
+export interface WorkflowBinding {
+  uuid: string;
+  title: string;
+  startInputs: WfNodeInputDef[];
+  inputs: WfNodeInput[];
+  /** 节点 uuid -> 标题 映射（用于卡片展示） */
+  nodeTitles: Record<string, string>;
+}
 
 export const useChatStore = defineStore('chat', () => {
   const userStore = useUserStore();
@@ -28,6 +44,18 @@ export const useChatStore = defineStore('chat', () => {
 
   // 会议ID对应-聊天记录 map对象
   const chatMap = ref<Record<string, ChatMessageVo[]>>({});
+
+  // 当前选中的工作流（全局，与智能体互斥；为 null 时走智能体对话）。
+  // 应用市场选工作流后置入此值并回主页，提交时由 chatWithId 据此走 enableWorkFlow。
+  const currentWorkflow = ref<WorkflowBinding | null>(null);
+
+  const setCurrentWorkflow = (wf: WorkflowBinding | null) => {
+    currentWorkflow.value = wf;
+  };
+
+  const clearCurrentWorkflow = () => {
+    currentWorkflow.value = null;
+  };
 
   const setChatMap = (id: string, data: ChatMessageVo[]) => {
     chatMap.value[id] = data?.map((item: ChatMessageVo) => {
@@ -109,5 +137,8 @@ export const useChatStore = defineStore('chat', () => {
     setDeepThinking,
     knowledgeId,
     setKnowledgeId,
+    currentWorkflow,
+    setCurrentWorkflow,
+    clearCurrentWorkflow,
   };
 });

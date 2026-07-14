@@ -107,7 +107,7 @@ async function getEmailCode() {
       ref="formRef"
       :model="formModel"
       :rules="rules"
-      style="width: 230px"
+      class="register-form"
       @submit.prevent="handleSubmit"
     >
       <el-form-item prop="username">
@@ -129,7 +129,7 @@ async function getEmailCode() {
           </template>
 
           <template #suffix>
-            <div class="font-size-14px cursor-pointer bg-[var(0,0,0,0.4)]" @click="getEmailCode">
+            <div class="code-trigger" @click="getEmailCode">
               {{ countdown === 0 || countdown === 60 ? "获取验证码" : `${countdown} s` }}
             </div>
           </template>
@@ -156,7 +156,7 @@ async function getEmailCode() {
         </el-input>
       </el-form-item>
       <el-form-item>
-        <el-button type="primary" style="width: 100%" native-type="submit">
+        <el-button class="submit-btn" type="primary" native-type="submit">
           注册
         </el-button>
       </el-form-item>
@@ -166,12 +166,15 @@ async function getEmailCode() {
     <div class="form-tip font-size-12px flex items-center">
       <span>已有账号，</span>
       <span
-        class="c-[var(--el-color-primar,#409eff)] cursor-pointer"
+        class="link-action"
         @click="loginFromStore.setLoginFormType('AccountPassword')"
       >
         返回登录
       </span>
     </div>
+    <p class="security-tip">
+      注册即代表你同意平台服务条款，邮箱仅用于验证身份与账号安全。
+    </p>
   </div>
 </template>
 
@@ -179,20 +182,69 @@ async function getEmailCode() {
 .custom-form {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
-.form-group {
-  display: flex;
-  gap: 8px;
-  align-items: center;
+
+.register-form {
+  width: 100%;
 }
-.login-btn {
-  padding: 12px;
-  margin-top: 24px;
-  color: white;
-  cursor: pointer;
-  background: #409eff;
+
+.submit-btn {
+  width: 100%;
+  height: 40px;
+  font-size: 14px;
+  font-weight: 600;
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
   border: none;
-  border-radius: 4px;
+  border-radius: 10px;
+  box-shadow: 0 10px 20px rgb(37 99 235 / 18%);
+}
+
+.code-trigger {
+  font-size: 12px;
+  font-weight: 600;
+  color: #2563eb;
+  cursor: pointer;
+}
+
+.link-action {
+  color: #2563eb;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.security-tip {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+:deep(.el-input__wrapper) {
+  min-height: 42px;
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px rgb(148 163 184 / 18%);
+}
+
+:deep(.el-input__inner) {
+  font-size: 13px;
+}
+
+:deep(.el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 1px rgb(37 99 235 / 48%);
+}
+
+:deep(.el-form-item) {
+  margin-bottom: 16px;
+}
+
+:deep(.el-form-item:last-child) {
+  margin-bottom: 0;
+}
+
+:deep(.el-form-item__error) {
+  padding-top: 5px;
+  font-size: 12px;
+  line-height: 1.25;
 }
 </style>

@@ -1,5 +1,6 @@
 <script lang="ts" setup>
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
+import loginEnterpriseHero from '@/assets/images/login-enterprise-hero.png';
 import logoPng from '@/assets/images/logo.png';
 import SvgIcon from '@/components/SvgIcon/index.vue';
 import { useUserStore } from '@/stores';
@@ -57,52 +58,64 @@ function onAfterLeave() {
     <div v-show="showMask" class="mask" @click.self="handleMaskClick">
       <!-- 仅对弹框应用过渡动画 -->
       <Transition name="dialog-zoom" @after-leave="onAfterLeave">
-        <div v-show="visible" class="glass-dialog">
-          <div class="left-section">
-            <div class="logo-wrap">
-              <img :src="logoPng" class="logo-img">
-              <span class="logo-text">RuoYi-AI</span>
+        <div
+          v-show="visible"
+          class="glass-dialog"
+          :class="{ 'register-dialog': loginFormType === 'RegistrationForm' }"
+        >
+          <section class="login-section">
+            <div class="login-header">
+              <div class="logo-wrap">
+                <img :src="logoPng" class="logo-img" alt="RuoYi-AI">
+                <span class="logo-text">RuoYi-AI</span>
+              </div>
+
+              <button
+                class="mode-toggle"
+                type="button"
+                :title="isQrMode ? '切换到账号登录' : '切换到扫码登录'"
+                :aria-label="isQrMode ? '切换到账号登录' : '切换到扫码登录'"
+                @click.stop="toggleLoginMode"
+              >
+                <SvgIcon :name="isQrMode ? 'zhanghaodenglu' : 'erweimadenglu'" />
+              </button>
             </div>
-            <div class="ad-banner">
-              <SvgIcon name="p-bangong" class-name="animate-up-down" />
-            </div>
-          </div>
-          <div class="right-section">
-            <div class="mode-toggle" @click.stop="toggleLoginMode">
-              <SvgIcon v-if="!isQrMode" name="erweimadenglu" />
-              <SvgIcon v-else name="zhanghaodenglu" />
-            </div>
-            <div class="content-wrapper">
+
+            <div class="login-content" :class="{ 'register-content': loginFormType === 'RegistrationForm' }">
+              <div v-if="!isQrMode" class="welcome-block">
+                <p class="welcome-eyebrow">
+                  {{ loginFormType === 'RegistrationForm' ? '创建新账号' : '欢迎回来' }}
+                </p>
+                <h2 class="welcome-title">
+                  {{ loginFormType === 'RegistrationForm' ? '开启你的智能工作空间' : '登录 RuoYi-AI' }}
+                </h2>
+                <p class="welcome-desc">
+                  {{ loginFormType === 'RegistrationForm' ? '使用邮箱快速注册，立即体验完整 AI 能力。' : '继续你的对话、应用与创作，数据将安全同步。' }}
+                </p>
+              </div>
+
               <div v-if="!isQrMode" class="form-box">
-                <!-- 表单容器，父组件可以自定定义表单插槽 -->
                 <slot name="form">
-                  <!-- 父组件不用插槽则显示默认表单 默认使用 AccountPassword 组件 -->
                   <div v-if="loginFormType === 'AccountPassword'" class="form-container">
-                    <span class="content-title"> 登录后免费使用完整功能 </span>
-
-                    <el-divider content-position="center">
-                      账号密码登录
-                    </el-divider>
-
+                    <span class="content-title">账号登录</span>
                     <AccountPassword />
                   </div>
 
                   <div v-if="loginFormType === 'RegistrationForm'" class="form-container">
-                    <span class="content-title"> 登录后免费使用完整功能 </span>
-
-                    <el-divider content-position="center">
-                      邮箱注册账号
-                    </el-divider>
-
                     <RegistrationForm />
                   </div>
                 </slot>
               </div>
+
               <div v-else class="qr-container">
                 <QrCodeLogin />
               </div>
             </div>
-          </div>
+          </section>
+
+          <section class="visual-section" aria-label="登录主视觉">
+            <img :src="loginEnterpriseHero" alt="登录主视觉" class="visual-image">
+          </section>
         </div>
       </Transition>
     </div>
@@ -110,178 +123,284 @@ function onAfterLeave() {
 </template>
 
 <style scoped lang="scss">
-/* 动画样式（仅作用于弹框） */
 .dialog-zoom-enter-active,
 .dialog-zoom-leave-active {
   transform-origin: center;
-  transition: all 0.3s ease-in-out;
+  transition: all 0.24s ease;
 }
+
 .dialog-zoom-enter-from,
 .dialog-zoom-leave-to {
   opacity: 0;
-  transform: scale(0.8);
+  transform: scale(0.96);
 }
+
 .dialog-zoom-enter-to,
 .dialog-zoom-leave-from {
   opacity: 1;
   transform: scale(1);
 }
 
-/* 遮罩层样式 */
 .mask {
   position: fixed;
-  top: 0;
-  left: 0;
+  inset: 0;
   z-index: 2000;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 100vw;
-  height: 100vh;
   overflow: hidden;
   user-select: none;
-  background-color: rgb(0 0 0 / 50%);
+  background:
+    radial-gradient(circle at 18% 18%, rgb(37 99 235 / 14%), transparent 30%),
+    rgb(15 23 42 / 62%);
   opacity: 1;
-  backdrop-filter: blur(3px);
-  transition: opacity 0.3s;
+  backdrop-filter: blur(10px);
+  transition: opacity 0.24s;
 }
+
 .mask[hidden] {
   opacity: 0;
 }
 
-/* 对话框容器样式 */
 .glass-dialog {
   z-index: 1000;
   display: flex;
-  width: fit-content;
-  max-width: 90%;
-  height: var(--login-dialog-height);
-  padding: var(--login-dialog-padding);
+  width: min(840px, calc(100vw - 48px));
+  height: min(530px, calc(100vh - 48px));
+  min-height: 0;
   overflow: hidden;
-  background-color: #ffffff;
-  border-radius: var(--login-dialog-border-radius);
-  box-shadow: 0 4px 24px rgb(0 0 0 / 10%);
+  background: #fff;
+  border: 1px solid rgb(226 232 240 / 86%);
+  border-radius: 18px;
+  box-shadow: 0 22px 56px rgb(15 23 42 / 22%);
 }
 
-/* 以下样式与原代码一致，未修改 */
-.left-section {
+.login-section {
   display: flex;
+  flex: 0 0 46%;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  width: calc(var(--login-dialog-width) / 2);
-  padding: var(--login-dialog-section-padding);
-  background: linear-gradient(
-    233deg,
-    rgb(113 161 255 / 60%) 17.67%,
-    rgb(154 219 255 / 60%) 70.4%
-  );
+  min-width: 0;
+  padding: 28px 34px 30px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
 }
-.left-section .logo-wrap {
+
+.login-header {
   display: flex;
-  gap: 8px;
   align-items: center;
-  justify-content: center;
-  margin-top: 24px;
+  justify-content: space-between;
+  gap: 16px;
 }
-.left-section .logo-wrap .logo-img {
-  width: 40px;
-  height: 40px;
-  padding: 4px;
-  background: var(--login-dialog-logo-background);
-  border-radius: 12px;
-  box-shadow: 0 2px 12px 0 rgb(0 0 0 / 8%);
-  filter: drop-shadow(0 4px 4px rgb(0 0 0 / 10%));
+
+.logo-wrap {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
 }
-.left-section .logo-wrap .logo-text {
+
+.logo-img {
+  width: 32px;
+  height: 32px;
+  padding: 5px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.logo-text {
+  color: #111827;
   font-size: 16px;
-  font-weight: 600;
-  color: var(--login-dialog-logo-text-color);
+  font-weight: 700;
+  white-space: nowrap;
 }
-.left-section .ad-banner {
-  position: relative;
-  width: 100%;
-  height: 100%;
-}
-.left-section .ad-banner .svg-icon {
-  position: absolute;
-  width: 100%;
-  height: 310px;
-}
-.right-section {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  width: calc(var(--login-dialog-width) / 2);
-  padding: var(--login-dialog-section-padding);
-}
-.right-section .content-wrapper {
-  flex: 1;
-  padding: 8px 0;
-  overflow: hidden;
-}
-.right-section .content-title {
+
+.mode-toggle {
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  color: #2563eb;
+  cursor: pointer;
+  background: #eff6ff;
+  border: 1px solid rgb(37 99 235 / 14%);
+  border-radius: 10px;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.mode-toggle:hover {
+  background: #dbeafe;
+  transform: translateY(-1px);
+}
+
+.mode-toggle :deep(svg) {
+  width: 18px;
+  height: 18px;
+}
+
+.login-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: flex-start;
   width: 100%;
-  font-size: 20px;
+  margin: 0 auto;
+  padding-top: 30px;
+}
+
+.welcome-block {
+  margin-bottom: 20px;
+}
+
+.register-content {
+  padding-top: 20px;
+}
+
+.register-content .welcome-block {
+  margin-bottom: 14px;
+}
+
+.register-content .welcome-title {
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.welcome-eyebrow {
+  margin: 0 0 7px;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.welcome-title {
+  margin: 0;
+  color: #111827;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.welcome-desc {
+  margin: 8px 0 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.form-box,
+.qr-container {
+  width: 100%;
+}
+
+.form-container {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+}
+
+.content-title {
+  margin-bottom: 14px;
+  color: #111827;
+  font-size: 17px;
   font-weight: 700;
 }
-.right-section .mode-toggle {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  font-size: 24px;
-  color: var(--login-dialog-mode-toggle-color);
-  cursor: pointer;
-  transition: color 0.3s;
-}
-.right-section .form-container,
-.right-section .qr-container {
+
+.qr-container {
   display: flex;
-  flex-direction: column;
+  justify-content: center;
+  padding: 12px 0 4px;
+}
+
+.visual-section {
+  position: relative;
+  display: flex;
+  flex: 1;
   align-items: center;
   justify-content: center;
+  min-width: 0;
+  overflow: hidden;
+  background: #e8f1ff;
+}
+
+.visual-section::after {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  content: "";
+  background:
+    linear-gradient(90deg, rgb(255 255 255 / 10%) 0%, transparent 28%),
+    linear-gradient(180deg, transparent 62%, rgb(15 23 42 / 12%) 100%);
+}
+
+.visual-image {
+  display: block;
   width: 100%;
   height: 100%;
-}
-.right-section .form-box {
-  place-self: center center;
-  width: 260px;
-  height: 100%;
-  padding: var(--login-dialog-section-padding);
-  border-radius: var(--login-dialog-border-radius);
+  object-fit: cover;
+  object-position: center;
+  transform: scale(1.08) translate3d(0, 0, 0);
+  animation: hero-float 7s ease-in-out infinite;
+  will-change: transform;
 }
 
-@media (width <= 800px) {
-  .left-section {
-    display: none !important;
-  }
+@media (width <= 860px) {
   .glass-dialog {
-    height: var(--login-dialog-height);
-    padding: var(--login-dialog-padding);
+    width: min(380px, calc(100vw - 24px));
+    height: auto;
+    min-height: auto;
   }
-  .right-section {
-    padding: calc(var(--login-dialog-section-padding) - 8px);
+
+  .login-section {
+    flex-basis: 100%;
+    min-width: 0;
+    padding: 24px 20px 26px;
   }
-  .content-wrapper {
-    padding: 4px 0;
+
+  .visual-section {
+    display: none;
   }
-}
-.animate-up-down {
-  animation: up-down 5s linear 0ms infinite;
+
+  .login-content {
+    max-width: 100%;
+    padding-top: 26px;
+  }
+
+  .register-content {
+    padding-top: 20px;
+  }
+
+  .welcome-title {
+    font-size: 22px;
+  }
 }
 
-@keyframes up-down {
-  0% {
-    transform: translateY(0);
+@media (width <= 420px) {
+  .mask {
+    align-items: flex-end;
   }
-  50% {
-    transform: translateY(-20px);
+
+  .glass-dialog {
+    width: 100%;
+    border-radius: 18px 18px 0 0;
   }
+
+  .login-section {
+    padding: 22px 18px 24px;
+  }
+}
+
+@keyframes hero-float {
+  0%,
   100% {
-    transform: translateY(0);
+    transform: scale(1.08) translate3d(0, 0, 0);
+  }
+
+  50% {
+    transform: scale(1.08) translate3d(0, -10px, 0);
   }
 }
 </style>

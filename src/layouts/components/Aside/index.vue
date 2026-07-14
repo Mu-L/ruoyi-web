@@ -1,4 +1,4 @@
-<!-- Aside 侧边栏 -->
+<!-- Aside 渚ц竟鏍? -->
 <script setup lang="ts">
 import type { ConversationItem } from 'vue-element-plus-x/types/Conversations';
 import type { ChatSessionVo } from '@/api/session/types';
@@ -17,6 +17,7 @@ const sessionStore = useSessionStore();
 const sessionId = computed(() => route.params?.id);
 const conversationsList = computed(() => sessionStore.sessionList);
 const loadMoreLoading = computed(() => sessionStore.isLoadingMore);
+const isAppMarketActive = computed(() => route.name === 'appMarket');
 const active = ref<string | undefined>();
 
 const searchKeyword = computed({
@@ -26,10 +27,10 @@ const searchKeyword = computed({
   },
 });
 
-// 搜索防抖定时器
+// 鎼滅储闃叉姈瀹氭椂鍣?
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
 
-// 搜索处理函数（带防抖）
+// 鎼滅储澶勭悊鍑芥暟锛堝甫闃叉姈锛?
 function handleSearch(keyword: string) {
   if (searchTimer) {
     clearTimeout(searchTimer);
@@ -44,23 +45,19 @@ function handleSearch(keyword: string) {
   }, 300);
 }
 
-// 清除搜索
+// 娓呴櫎鎼滅储
 function handleClearSearch() {
   sessionStore.clearSearch();
 }
 
 onMounted(async () => {
-  // 获取会话列表
-  console.log('[Aside.onMounted] 开始获取会话列表');
+  // 鑾峰彇浼氳瘽鍒楄〃
   await sessionStore.requestSessionList();
-  console.log('[Aside.onMounted] 获取会话列表完成，conversationsList.length:', conversationsList.value.length);
-  console.log('[Aside.onMounted] conversationsList:', conversationsList.value);
 
-  // 高亮最新会话
+  // 楂樹寒鏈€鏂颁細璇?
   if (conversationsList.value.length > 0 && sessionId.value) {
-    console.log('[Aside.onMounted] 获取当前选中会话，sessionId:', sessionId.value);
     const currentSessionRes = await get_session(`${sessionId.value}`);
-    // 通过 ID 查询详情，设置当前会话 (因为有分页)
+    // 閫氳繃 ID 鏌ヨ璇︽儏锛岃缃綋鍓嶄細璇?(鍥犱负鏈夊垎椤?
     sessionStore.setCurrentSession(currentSessionRes.data);
   }
 });
@@ -72,13 +69,17 @@ watch(
   },
 );
 
-// 创建会话
+// 鍒涘缓浼氳瘽
 function handleCreatChat() {
-  // 创建会话, 跳转到默认聊天
+  // 鍒涘缓浼氳瘽, 璺宠浆鍒伴粯璁よ亰澶?
   sessionStore.createSessionBtn();
 }
 
-// 切换会话
+// 鍒囨崲浼氳瘽
+function handleOpenAppMarket() {
+  router.replace({ name: 'appMarket' });
+}
+
 function handleChange(item: ConversationItem<ChatSessionVo>) {
   sessionStore.setCurrentSession(item);
   router.replace({
@@ -89,14 +90,14 @@ function handleChange(item: ConversationItem<ChatSessionVo>) {
   });
 }
 
-// 处理组件触发的加载更多事件
+// 澶勭悊缁勪欢瑙﹀彂鐨勫姞杞芥洿澶氫簨浠?
 async function handleLoadMore() {
   if (!sessionStore.hasMore)
-    return; // 无更多数据时不加载
+    return; // 鏃犳洿澶氭暟鎹椂涓嶅姞杞?
   await sessionStore.loadMoreSessions();
 }
 
-// 右键菜单
+// 鍙抽敭鑿滃崟
 function handleMenuCommand(command: string, item: ConversationItem<ChatSessionVo>) {
   switch (command) {
     case 'delete':
@@ -110,30 +111,30 @@ function handleMenuCommand(command: string, item: ConversationItem<ChatSessionVo
         autofocus: false,
       })
         .then(async () => {
-          // 删除会话
+          // 鍒犻櫎浼氳瘽
           await sessionStore.deleteSessions([item.id!]);
 
-          // 检查删除的是否为当前选中会话，若是则返回默认页
+          // 妫€鏌ュ垹闄ょ殑鏄惁涓哄綋鍓嶉€変腑浼氳瘽锛岃嫢鏄垯杩斿洖榛樿椤?
           nextTick(() => {
             if (item.id === active.value) {
-              // 如果删除当前会话，返回到默认页面
+              // 濡傛灉鍒犻櫎褰撳墠浼氳瘽锛岃繑鍥炲埌榛樿椤甸潰
               sessionStore.createSessionBtn();
             }
           });
         })
         .catch(() => {
-          // 取消删除
+          // 鍙栨秷鍒犻櫎
         });
       break;
     case 'rename':
-      ElMessageBox.prompt('', '编辑对话名称', {
+      ElMessageBox.prompt('', '缂栬緫瀵硅瘽鍚嶇О', {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
         inputErrorMessage: '请输入对话名称',
         confirmButtonClass: 'el-button--primary',
         cancelButtonClass: 'el-button--info',
         roundButton: true,
-        inputValue: item.sessionTitle, // 设置默认值
+        inputValue: item.sessionTitle, // 璁剧疆榛樿鍊?
         autofocus: false,
         inputValidator: (value) => {
           if (!value) {
@@ -154,7 +155,7 @@ function handleMenuCommand(command: string, item: ConversationItem<ChatSessionVo
               message: '修改成功',
             });
             nextTick(() => {
-              // 如果是当前会话，则更新当前选中会话信息
+              // 濡傛灉鏄綋鍓嶄細璇濓紝鍒欐洿鏂板綋鍓嶉€変腑浼氳瘽淇℃伅
               if (sessionStore.currentSession?.id === item.id) {
                 sessionStore.setCurrentSession({
                   ...item,
@@ -177,7 +178,7 @@ function handleMenuCommand(command: string, item: ConversationItem<ChatSessionVo
     :class="{
       'aside-container-suspended': designStore.isSafeAreaHover,
       'aside-container-collapse': designStore.isCollapse,
-      // 折叠且未激活悬停时添加 no-delay 类
+      // 鎶樺彔涓旀湭婵€娲绘偓鍋滄椂娣诲姞 no-delay 绫?
       'no-delay': designStore.isCollapse && !designStore.hasActivatedHover,
     }"
   >
@@ -191,7 +192,7 @@ function handleMenuCommand(command: string, item: ConversationItem<ChatSessionVo
       </div>
 
       <div class="aside-body">
-        <!-- 搜索框 -->
+        <!-- 鎼滅储妗? -->
         <div class="search-wrapper">
           <el-input
             v-model="searchKeyword"
@@ -208,7 +209,24 @@ function handleMenuCommand(command: string, item: ConversationItem<ChatSessionVo
           </el-input>
         </div>
 
-        <!-- 分割线 -->
+        <!-- 鍒嗗壊绾? -->
+        <div class="divider" />
+
+        <!-- 新对话：回主页开新会话 -->
+        <div class="new-chat-entry" @click="handleCreatChat">
+          <el-icon>
+            <Plus />
+          </el-icon>
+          <span>新对话</span>
+        </div>
+
+        <div class="workbench-entry" :class="{ active: isAppMarketActive }" @click="handleOpenAppMarket">
+          <el-icon>
+            <Grid />
+          </el-icon>
+          <span>应用市场</span>
+        </div>
+
         <div class="divider" />
 
         <div class="aside-content">
@@ -253,7 +271,7 @@ function handleMenuCommand(command: string, item: ConversationItem<ChatSessionVo
 </template>
 
 <style scoped lang="scss">
-// 基础样式
+// 鍩虹鏍峰紡
 .aside-container {
   position: absolute;
   top: 0;
@@ -269,7 +287,7 @@ function handleMenuCommand(command: string, item: ConversationItem<ChatSessionVo
     flex-direction: column;
     height: 100%;
 
-    // 侧边栏头部样式
+    // 渚ц竟鏍忓ご閮ㄦ牱寮?
     .aside-header {
       display: flex;
       align-items: center;
@@ -299,9 +317,9 @@ function handleMenuCommand(command: string, item: ConversationItem<ChatSessionVo
       }
     }
 
-    // 侧边栏内容样式
+    // 渚ц竟鏍忓唴瀹规牱寮?
     .aside-body {
-      // 搜索框样式
+      // 鎼滅储妗嗘牱寮?
       .search-wrapper {
         padding: 16px 12px 12px;
         .search-input {
@@ -332,11 +350,56 @@ function handleMenuCommand(command: string, item: ConversationItem<ChatSessionVo
         }
       }
 
-      // 分割线
+      // 鍒嗗壊绾?
       .divider {
         height: 1px;
         margin: 12px;
         background-color: rgb(0 0 0 / 6%);
+      }
+      .workbench-entry {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        height: 38px;
+        padding: 0 12px;
+        margin: 0 12px;
+        font-size: 14px;
+        font-weight: 600;
+        color: rgb(0 0 0 / 78%);
+        cursor: pointer;
+        border-radius: 10px;
+        transition: all 0.2s ease;
+
+        &:hover {
+          background-color: rgb(0 0 0 / 4%);
+        }
+
+        &.active {
+          color: var(--el-color-primary, #409eff);
+          background: var(--el-color-primary-light-9, rgb(235.9 245.3 255));
+        }
+      }
+      // 新对话按钮：圆角，主色描边
+      .new-chat-entry {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        justify-content: center;
+        height: 38px;
+        padding: 0 12px;
+        margin: 0 12px 4px;
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--el-color-primary, #409eff);
+        cursor: pointer;
+        border: 1px solid var(--el-color-primary, #409eff);
+        border-radius: 10px;
+        transition: all 0.2s ease;
+
+        &:hover {
+          background-color: var(--el-color-primary, #409eff);
+          color: #fff;
+        }
       }
       .aside-content {
         display: flex;
@@ -345,7 +408,7 @@ function handleMenuCommand(command: string, item: ConversationItem<ChatSessionVo
         height: 100%;
         min-height: 0;
 
-        // 会话列表高度-基础样式
+        // 浼氳瘽鍒楄〃楂樺害-鍩虹鏍峰紡
         .conversations-wrap {
           height: calc(100vh - 180px);
           .label {
@@ -359,7 +422,7 @@ function handleMenuCommand(command: string, item: ConversationItem<ChatSessionVo
   }
 }
 
-// 折叠样式
+// 鎶樺彔鏍峰紡
 .aside-container-collapse {
   position: absolute;
   top: 54px;
@@ -369,7 +432,7 @@ function handleMenuCommand(command: string, item: ConversationItem<ChatSessionVo
   padding-bottom: 12px;
   overflow: hidden;
 
-  /* 禁用悬停事件 */
+  /* 绂佺敤鎮仠浜嬩欢 */
   pointer-events: none;
   border: 1px solid rgb(0 0 0 / 8%);
   border-radius: 15px;
@@ -378,17 +441,17 @@ function handleMenuCommand(command: string, item: ConversationItem<ChatSessionVo
     0 0 1px 0 rgb(0 0 0 / 15%);
   opacity: 0;
 
-  // 向左偏移一个宽度
+  // 鍚戝乏鍋忕Щ涓€涓搴?
   transform: translateX(-100%);
   transition: opacity 0.3s ease 0.3s, transform 0.3s ease 0.3s;
 
-  /* 新增：未激活悬停时覆盖延迟 */
+  /* 鏂板锛氭湭婵€娲绘偓鍋滄椂瑕嗙洊寤惰繜 */
   &.no-delay {
     transition-delay: 0s, 0s;
   }
 }
 
-// 悬停样式
+// 鎮仠鏍峰紡
 .aside-container-collapse:hover,
 .aside-container-collapse.aside-container-suspended {
   height: auto;
@@ -402,27 +465,27 @@ function handleMenuCommand(command: string, item: ConversationItem<ChatSessionVo
     0 10px 20px 0 rgb(0 0 0 / 10%),
     0 0 1px 0 rgb(0 0 0 / 15%);
 
-  // 直接在这里写悬停时的样式（与 aside-container-suspended 一致）
+  // 鐩存帴鍦ㄨ繖閲屽啓鎮仠鏃剁殑鏍峰紡锛堜笌 aside-container-suspended 涓€鑷达級
   opacity: 1;
 
-  // 过渡动画沿用原有设置
+  // 杩囨浮鍔ㄧ敾娌跨敤鍘熸湁璁剧疆
   transform: translateX(15px);
   transition: opacity 0.3s ease 0s, transform 0.3s ease 0s;
 
-  // 会话列表高度-悬停样式
+  // 浼氳瘽鍒楄〃楂樺害-鎮仠鏍峰紡
   .conversations-wrap {
     height: calc(100vh - 155px) !important;
   }
 }
 
-// 样式穿透
+// 鏍峰紡绌块€?
 :deep() {
-  // 会话列表背景色
+  // 浼氳瘽鍒楄〃鑳屾櫙鑹?
   .conversations-list {
     background-color: transparent !important;
   }
 
-  // 群组标题样式 和 侧边栏菜单背景色一致
+  // 缇ょ粍鏍囬鏍峰紡 鍜?渚ц竟鏍忚彍鍗曡儗鏅壊涓€鑷?
   .conversation-group-title {
     padding-left: 12px !important;
     font-weight: 700 !important;

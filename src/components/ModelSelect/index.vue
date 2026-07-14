@@ -4,10 +4,16 @@ import type { GetSessionListVO } from '@/api/model/types';
 import Popover from '@/components/Popover/index.vue';
 import SvgIcon from '@/components/SvgIcon/index.vue';
 import { useModelStore } from '@/stores/modules/model';
+import { useUserStore } from '@/stores/modules/user';
 
 const modelStore = useModelStore();
+const userStore = useUserStore();
+const isLoggedIn = computed(() => !!userStore.token);
 
 onMounted(async () => {
+  if (!isLoggedIn.value)
+    return;
+
   await modelStore.requestModelList();
   // 设置默认模型
   if (
@@ -19,7 +25,12 @@ onMounted(async () => {
 });
 
 const currentModelName = computed(
-  () => modelStore.currentModelInfo && modelStore.currentModelInfo.modelDescribe,
+  () => {
+    if (!isLoggedIn.value)
+      return '登录后选择模型';
+
+    return modelStore.currentModelInfo && modelStore.currentModelInfo.modelDescribe;
+  },
 );
 const popoverList = computed(() => modelStore.modelList);
 
@@ -37,6 +48,12 @@ const popoverRef = ref();
 
 // 显示
 async function showPopover() {
+  if (!isLoggedIn.value) {
+    userStore.ensureLogin('/chat', '登录后可选择专属模型');
+    popoverRef.value?.hide?.();
+    return;
+  }
+
   // 获取最新的模型列表
   await modelStore.requestModelList();
 }
