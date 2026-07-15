@@ -356,7 +356,9 @@ function handleMenuCommand(command: string, item: ConversationItem<ChatSessionVo
         margin: 12px;
         background-color: rgb(0 0 0 / 6%);
       }
-      .workbench-entry {
+
+      // 入口按钮组基类：共享基线，组内紧凑、组外留白，形成视觉分组
+      %entry-btn {
         display: flex;
         gap: 8px;
         align-items: center;
@@ -365,40 +367,37 @@ function handleMenuCommand(command: string, item: ConversationItem<ChatSessionVo
         margin: 0 12px;
         font-size: 14px;
         font-weight: 600;
-        color: rgb(0 0 0 / 78%);
         cursor: pointer;
         border-radius: 10px;
         transition: all 0.2s ease;
+        .el-icon {
+          font-size: 16px;
+        }
+      }
 
+      // 新对话：与应用市场一致的幽灵态，hover 灰底
+      .new-chat-entry {
+        @extend %entry-btn;
+
+        justify-content: flex-start;
+        margin-bottom: 6px; // 组内间距：紧凑
+        color: rgb(0 0 0 / 78%);
         &:hover {
           background-color: rgb(0 0 0 / 4%);
         }
+      }
 
+      // 应用市场：次要入口，幽灵态，hover 轻提示
+      .workbench-entry {
+        @extend %entry-btn;
+
+        color: rgb(0 0 0 / 78%);
+        &:hover {
+          background-color: rgb(0 0 0 / 4%);
+        }
         &.active {
           color: var(--el-color-primary, #409eff);
           background: var(--el-color-primary-light-9, rgb(235.9 245.3 255));
-        }
-      }
-      // 新对话按钮：圆角，主色描边
-      .new-chat-entry {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-        justify-content: center;
-        height: 38px;
-        padding: 0 12px;
-        margin: 0 12px 4px;
-        font-size: 14px;
-        font-weight: 600;
-        color: var(--el-color-primary, #409eff);
-        cursor: pointer;
-        border: 1px solid var(--el-color-primary, #409eff);
-        border-radius: 10px;
-        transition: all 0.2s ease;
-
-        &:hover {
-          background-color: var(--el-color-primary, #409eff);
-          color: #fff;
         }
       }
       .aside-content {
